@@ -5,10 +5,15 @@ Uses Pydantic v2 (`pydantic-settings`) with field validators.
 
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+from typing import Annotated, Any
 
 from pydantic import AnyHttpUrl, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+# Resolve the project-root `.env` regardless of the current working directory
+# (so `uvicorn app.main:app` works whether launched from `backend/` or repo root).
+_REPO_ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
 
 
 class Settings(BaseSettings):
@@ -43,7 +48,10 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # ── CORS ────────────────────────────────────────────────────────────────
-    BACKEND_CORS_ORIGINS: list[AnyHttpUrl] = []
+    BACKEND_CORS_ORIGINS: Annotated[list[AnyHttpUrl], NoDecode] = []
+    # Optional regex to match origins (handy in dev when Vite shifts ports,
+    # e.g. r"http://localhost:\d+" allows :3000, :3001, :5173, …).
+    BACKEND_CORS_ORIGIN_REGEX: str | None = None
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
@@ -54,7 +62,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         case_sensitive=True,
-        env_file=".env",
+        env_file=(_REPO_ROOT_ENV, ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )

@@ -6,82 +6,95 @@ This document breaks down the development of the Oil Splitting Tools web applica
 
 ## Phase 1: Infrastructure & Project Setup
 
-- [ ] Initialize Git repository and standard `.gitignore`.
-- [ ] **Docker & Database:**
-  - [ ] Create `docker-compose.dev.yml` for PostgreSQL 17 (local development).
-  - [ ] Spin up the database container and ensure connection stability.
-- [ ] **Backend Setup (FastAPI):**
-  - [ ] Initialize Python environment (`venv` or `poetry`).
-  - [ ] Install dependencies: `fastapi`, `uvicorn`, `sqlalchemy`, `alembic`, `pydantic`, `pandas`, `passlib`, `python-jose`, `python-multipart`.
-  - [ ] Set up basic FastAPI app structure (`app/main.py`, `app/api/`, `app/core/`, `app/db/`, `app/models/`, `app/schemas/`, `app/services/`).
-  - [ ] Configure environment variables (`.env`).
-  - [ ] Set up SQLAlchemy engine, session maker, and Base model.
-  - [ ] Initialize Alembic (`alembic init`) and configure it to use SQLAlchemy models.
-- [ ] **Frontend Setup (React):**
-  - [ ] Initialize React app using Tanstack Start by using pnpm package manager
-  - [ ] Install dependencies: `@tanstack/react-router`, `@tanstack/react-query`, `@tanstack/react-table`, `ky` or `fetch` wrappers, `tailwindcss`, `lucide-react`.
-  - [ ] Configure Tailwind CSS.
-  - [ ] Set up basic folder structure (`src/components/`, `src/features/`, `src/lib/`, `src/routes/`).
+- [x] Initialize Git repository and standard `.gitignore`.
+- [x] **Docker & Database:**
+  - [x] Create `docker-compose.yml` for PostgreSQL 17 (local development).
+  - [x] Spin up the database container and ensure connection stability.
+- [x] **Backend Setup (FastAPI):**
+  - [x] Initialize Python environment (`venv` or `poetry`).
+  - [x] Install dependencies: `fastapi`, `uvicorn`, `sqlalchemy`, `alembic`, `pydantic`, `pandas`, `passlib`, `python-jose`, `python-multipart`.
+  - [x] Set up basic FastAPI app structure (`app/main.py`, `app/api/`, `app/core/`, `app/db/`, `app/schemas/`, `app/services/`).
+  - [x] Configure environment variables (`.env`).
+  - [x] Set up SQLAlchemy engine, session maker, and Base model.
+  - [x] Initialize Alembic (`alembic init`) and configure it to use SQLAlchemy models.
+- [x] **Frontend Setup (React):**
+  - [x] Initialize React app using Tanstack Start by using pnpm package manager
+  - [x] Install dependencies: `@tanstack/react-router`, `@tanstack/react-query`, `@tanstack/react-table`, `ky` (HTTP client), `tailwindcss`, `lucide-react`.
+  - [x] Configure Tailwind CSS.
+  - [x] Set up basic folder structure (`src/components/`, `src/features/`, `src/lib/`, `src/routes/`).
 
 ---
 
 ## Phase 2: Authentication & User Management
 
-- [ ] **Backend (Auth):**
-  - [ ] Create `User` SQLAlchemy model (`id`, `email`, `hashed_password`, `full_name`, `is_active`).
-  - [ ] Generate Alembic migration for `users` table and apply it.
-  - [ ] Implement password hashing and verification utility functions.
-  - [ ] Implement JWT token generation and decoding logic.
-  - [ ] Create FastAPI dependency `get_current_user` to secure routes.
-  - [ ] Implement Auth Endpoints:
-    - [ ] `POST /api/v1/auth/register`
-    - [ ] `POST /api/v1/auth/login`
-    - [ ] `GET /api/v1/auth/me`
-- [ ] **Frontend (Auth):**
-  - [ ] Create API client utility for auth (handling JWT in headers, storing tokens in localStorage/cookies).
-  - [ ] Build Login Page component.
-  - [ ] Build Registration Page component.
-  - [ ] Implement Auth Context/Provider to manage global user state.
-  - [ ] Setup protected routes in TanStack Router (redirect to login if unauthenticated).
+- [x] **Backend (Auth):**
+  - [x] Create `User` SQLAlchemy model (`id`, `email`, `hashed_password`, `full_name`, `is_active`, `is_superuser`).
+  - [x] Generate Alembic migration for `users` table and apply it.
+  - [x] Implement password hashing and verification utility functions (`passlib[bcrypt]`).
+  - [x] Implement JWT token generation and decoding logic (`python-jose`, access + refresh).
+  - [x] Create FastAPI dependency `get_current_user` to secure routes.
+  - [x] Implement Auth Endpoints:
+    - [x] `POST /api/v1/auth/register`
+    - [x] `POST /api/v1/auth/login`
+    - [x] `POST /api/v1/auth/refresh` _(bonus — silent refresh support)_
+    - [x] `GET /api/v1/auth/me`
+- [x] **Frontend (Auth):**
+  - [x] Create API client utility for auth (`ky` instance with JWT header injection, refresh-on-401, tokens in `localStorage`).
+  - [x] Build Login Page component (`/login`).
+  - [x] Build Registration Page component (`/register`).
+  - [x] Implement Auth Context/Provider to manage global user state.
+  - [x] Setup protected routes in TanStack Router (`_app` layout redirects to `/login` when unauthenticated).
 
 ---
 
 ## Phase 3: Core Business Logic (Python Porting)
 
-- [ ] **Algorithm Extraction:**
-  - [ ] Extract the core logic from `Markering and Splitting.ipynb`.
-  - [ ] Create Python service modules in `app/services/` (e.g., `splitter_engine.py`).
-  - [ ] Implement the "Auto Marker Machine" logic (handling TOP WAY, BOTTOM WAY, etc.).
-  - [ ] Implement pattern-based gap filling for missing data ("p" filling).
-  - [ ] Implement the KH-weighted Splitting calculation for Oil, Gas, Water, Water Injection.
-- [ ] **Testing:**
-  - [ ] Create synthetic test datasets matching the required 5 inputs.
-  - [ ] Write `pytest` unit tests to verify the ported logic perfectly matches the Jupyter Notebook's outputs.
+- [x] **Algorithm Extraction:**
+  - [x] Extract the core logic from `Markering and Splitting.ipynb`.
+  - [x] Create Python service modules in `app/services/` (`marker_engine.py`, `gap_filler.py`, `splitter_engine.py`).
+  - [x] Implement the "Auto Marker Machine" logic (TOP_WAY, BOTTOM_WAY, first-marker tolerance, squeeze_machine).
+  - [x] Implement pattern-based gap filling for missing data ("p" filling): auto bfill/ffill for leading/trailing, interactive resolution for middle gaps.
+  - [x] Implement the KH-weighted Splitting calculation for Oil, Gas, Water, Water Injection.
+- [x] **Testing:**
+  - [x] Create synthetic test datasets matching the required inputs.
+  - [x] Write `pytest` unit tests to verify the ported logic (32 tests, all passing).
 
 ---
 
 ## Phase 4: Projects & Data Ingestion
 
-- [ ] **Backend (Projects & Datasets):**
-  - [ ] Create `Project` model (`id`, `owner_id`, `name`, `description`).
-  - [ ] Create `Dataset` model (`id`, `project_id`, `kind`, `source`, `raw_data` JSONB, `validation_errors` JSONB, `is_valid`).
-  - [ ] Generate and apply Alembic migrations.
-  - [ ] Implement CRUD endpoints for Projects (`/api/v1/projects`).
-  - [ ] Implement Data Parsing logic (CSV, TSV for pasting, XLSX using `openpyxl`).
-  - [ ] Implement Row-Level Validation logic for the 5 dataset kinds (Marker, Sand, Completion, Production, Lumping).
-  - [ ] Implement Ingestion Endpoints:
-    - [ ] `POST /api/v1/projects/{id}/datasets/paste` (JSON data)
-    - [ ] `POST /api/v1/projects/{id}/datasets/upload` (Multipart file upload)
-    - [ ] `GET /api/v1/projects/{id}/datasets`
-- [ ] **Frontend (Ingestion UI):**
-  - [ ] Create Projects Dashboard (list projects, create new project button).
-  - [ ] Create Project Detail Layout (tabs for Inputs vs Results).
-  - [ ] Build "Data Inputs" view with 6 specific tabs (Marker, Sand, Completion, Production, Lumping, Well).
-  - [ ] For each tab, implement UI components:
-    - [ ] Paste Dialog (textarea to paste TSV/CSV).
-    - [ ] Upload Button (file picker).
-    - [ ] TanStack Table to preview parsed/uploaded data.
-    - [ ] Validation Errors panel (displaying row-specific errors returned from backend).
+- [x] **Backend (Projects & Datasets):**
+  - [x] Create `Project` model (`id`, `owner_id`, `name`, `description`).
+  - [x] Create `Dataset` model (`id`, `project_id`, `kind`, `source`, `raw_data` JSONB, `validation_errors` JSONB, `is_valid`).
+  - [x] Generate and apply Alembic migrations.
+  - [x] Implement CRUD endpoints for Projects (`/api/v1/projects`).
+  - [x] Implement Data Parsing logic (CSV, TSV for pasting, XLSX using `openpyxl`).
+  - [x] Implement Row-Level Validation logic for the 6 dataset kinds (Marker, Marker List, Completion, Production, Lumping, Wells).
+    - Type coercion + missing-value detection per required column.
+    - Cross-column rule: `Perf Bottom > Perf Top` for completion rows.
+    - Status enum check: `Perf Status` must be `perforation` or `squeeze` (case-insensitive).
+    - Non-negative numeric guards on `Depth`, `Perf Top/Bottom`, production fluid columns, and `Lumping`.
+    - Lumping input accepts long format (`Zone`, `Well`, `Lumping`) and stores a pivoted zone × well matrix.
+    - Empty-dataset detection.
+  - [x] Implement Ingestion Endpoints:
+    - [x] `POST /api/v1/projects/{id}/datasets/paste` (JSON data)
+    - [x] `POST /api/v1/projects/{id}/datasets/upload` (Multipart file upload)
+    - [x] `POST /api/v1/projects/{id}/datasets/workbook-sheets` (Excel sheet inspection)
+    - [x] `GET /api/v1/projects/{id}/datasets`
+  - [x] Backend tests: 33 ingestion tests + explicit marker-tolerance scenario tests (68 passing total).
+- [x] **Frontend (Ingestion UI):**
+  - [x] Create Projects Dashboard (list projects, create new project button) at `/dashboard`.
+  - [x] Create Project Detail Layout at `/projects/$projectId` (tabs for Inputs vs Results).
+  - [x] Build "Data Inputs" view with 6 specific tabs (Marker, Sand, Completion, Production, Lumping, Wells).
+  - [x] For each tab, implement UI components:
+    - [x] Paste Dialog (textarea to paste TSV/CSV with auto-delimiter detection).
+    - [x] Upload Button (file picker for CSV/TSV/XLSX).
+    - [x] Excel sheet picker for multi-sheet workbooks.
+    - [x] Required-column caution block for every dataset type.
+    - [x] TanStack Table to preview parsed/uploaded data (first 25 rows).
+    - [x] Validation Errors panel (row + column + message, returned from backend).
+  - [x] Wells tab accepts a real `Well` list dataset.
+  - [x] All new components use modern Tailwind v4 syntax (`bg-(--var)` shortcut — no obsolete `[var(...)]`).
 
 ---
 
