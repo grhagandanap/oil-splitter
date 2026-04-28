@@ -100,18 +100,19 @@ This document breaks down the development of the Oil Splitting Tools web applica
 
 ## Phase 5: Execution & Results Dashboard
 
-- [ ] **Backend (Execution):**
-  - [ ] Create `Run` or `SplitResult` model to store calculated outputs per project.
-  - [ ] Implement Endpoint `POST /api/v1/projects/{id}/split/run`:
-    - Fetch active, valid datasets for the project.
-    - Pass data to `splitter_engine.py`.
-    - Save results to the database.
-  - [ ] Implement Endpoint `GET /api/v1/projects/{id}/split/runs/{run_id}` to fetch results.
-- [ ] **Frontend (Results):**
-  - [ ] Build a "Run Calculation" button/interface in the Project Detail view.
-  - [ ] Handle loading states during algorithm execution.
-  - [ ] Build Results Dashboard to display the allocated splitting values (using TanStack Table).
-  - [ ] Implement "Export to CSV/Excel" functionality on the frontend for the results table.
+- [x] **Backend (Execution):**
+  - [x] Create `SplitRun` model to store calculated outputs per project (status, dataset snapshot, detail / summary JSONB, warnings, error, timestamps). Alembic migration `e5a9bfd68e9e_create_split_runs_table.py`.
+  - [x] Implement Endpoint `POST /api/v1/projects/{id}/split/run`:
+    - Fetch latest valid dataset of each required kind (marker, sand, completion, production, lumping, well).
+    - Wire into the marker engine (with marker depths joined onto completion), gap filler (auto leading/trailing, middle gaps surfaced as warnings), and splitter engine.
+    - Persist the `SplitRun` row with detail / summary / warnings.
+  - [x] Implement Endpoint `GET /api/v1/projects/{id}/split/runs/{run_id}` (truncated detail) plus `GET /split/runs` (history) and `GET /split/runs/{run_id}/export?table=&format=` for full CSV / XLSX downloads.
+  - [x] Backend tests: 10 new orchestrator tests (input validation, JSON-safe output, KH conservation, missing-from-lumping warnings) — full suite 87 passing.
+- [x] **Frontend (Results):**
+  - [x] "Run splitter" button in the Project Detail Results tab with inline loading state.
+  - [x] Past-runs history list with status badges (succeeded / failed / running), dataset snapshot chips, and warnings panel.
+  - [x] Results dashboard with Summary (per sand) and Detail (per row) tabs backed by TanStack Table.
+  - [x] Export buttons: per-tab CSV / Excel download (full data, bypasses UI truncation) using a `Bearer`-authenticated streamed file download.
 
 ---
 

@@ -8,7 +8,6 @@ import {
 	ArrowLeft,
 	ChartLine,
 	ClipboardList,
-	Construction,
 	Database,
 	Layers,
 	LineChart,
@@ -22,6 +21,7 @@ import { type TabItem, Tabs } from "#/components/ui/tabs";
 import { DatasetPanel } from "#/features/datasets/DatasetPanel";
 import type { DatasetKind } from "#/features/datasets/types";
 import { useProject } from "#/features/projects/hooks";
+import { ResultsPanel } from "#/features/runs/ResultsPanel";
 
 export const Route = createFileRoute("/_app/projects/$projectId")({
 	component: ProjectDetailPage,
@@ -128,25 +128,10 @@ function ProjectDetailPage() {
 					</div>
 				</div>
 			) : (
-				<ResultsPlaceholder />
+				<div className="island-shell rounded-3xl p-6">
+					<ResultsPanel projectId={projectIdNum} />
+				</div>
 			)}
-		</div>
-	);
-}
-
-function ResultsPlaceholder() {
-	return (
-		<div className="island-shell rounded-3xl p-10 text-center">
-			<div className="mx-auto mb-3 grid h-10 w-10 place-items-center rounded-2xl bg-(--surface-strong) text-(--lagoon-deep) shadow-[0_1px_0_var(--inset-glint)_inset]">
-				<Construction size={18} />
-			</div>
-			<h2 className="display-title text-lg font-bold text-(--sea-ink)">
-				Results coming in Phase 5
-			</h2>
-			<p className="mx-auto mt-2 max-w-md text-sm text-(--sea-ink-soft)">
-				This tab will host the splitter run controls and the per-sand allocation
-				dashboard once Phase 5 lands.
-			</p>
 		</div>
 	);
 }
