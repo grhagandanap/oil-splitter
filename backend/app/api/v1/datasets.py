@@ -21,6 +21,12 @@ from app.services.ingestion import ingest, list_xlsx_sheets
 
 router = APIRouter(prefix="/projects/{project_id}/datasets", tags=["datasets"])
 
+# Cap on how many ``raw_data`` / ``validation_errors`` rows the detail endpoint
+# returns. The DB still stores the full payload — this only protects the
+# frontend from downloading and parsing 100k+ rows just to render a 25-row
+# preview. ``row_count`` (the canonical full size) remains accurate.
+_DETAIL_ROW_LIMIT = 100
+
 
 async def _get_owned_project(db, project_id: int, owner_id: int) -> Project:
     project = await db.scalar(
@@ -176,7 +182,24 @@ async def get_dataset(
     )
     if ds is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
-    return ds
+
+    # Build a plain dict (not the ORM instance) so the truncated arrays we
+    # return to the client never get persisted back to the database on the
+    # next ``commit`` of this session.
+    raw = list(ds.raw_data or [])
+    errs = list(ds.validation_errors or [])
+    return DatasetDetail(
+        id=ds.id,
+        project_id=ds.project_id,
+        kind=ds.kind,
+        source=ds.source,
+        filename=ds.filename,
+        row_count=ds.row_count,
+        is_valid=ds.is_valid,
+        validation_errors=errs[:_DETAIL_ROW_LIMIT],
+        created_at=ds.created_at,
+        raw_data=raw[:_DETAIL_ROW_LIMIT],
+    )
 
 
 @router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)

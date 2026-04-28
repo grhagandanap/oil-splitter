@@ -76,15 +76,29 @@ export const DATASET_REQUIRED_COLUMNS: Record<DatasetKind, string[]> = {
 	well: ["Well"],
 };
 
+/**
+ * Canonical column order shown in the preview table after ingestion. Any
+ * columns not in this list (e.g. dynamic well columns from a pivoted lumping
+ * matrix) are appended afterwards in the order they were received.
+ */
+export const DATASET_PREVIEW_COLUMN_ORDER: Record<DatasetKind, string[]> = {
+	marker: ["Well", "Marker", "Depth"],
+	sand: ["Marker"],
+	completion: ["Well", "Date", "Perf Status", "Perf Top", "Perf Bottom"],
+	production: ["Well", "Date", "Oil", "Water", "Gas", "Water Injection"],
+	lumping: ["Zone"],
+	well: ["Well"],
+};
+
 export const DATASET_COLUMN_NOTES: Record<DatasetKind, string> = {
 	marker:
-		"Use one row per well-marker depth. Example columns: Well, Marker, Depth.",
-	sand: "Use this to define marker order. One Marker value per row.",
+		"Use one row per well-marker depth. Column order can be arbitrary as long as required names exist.",
+	sand: "Use this to define marker order. Column order can be arbitrary as long as required names exist.",
 	completion:
-		"Perf Status must be perforation or squeeze. Perf Bottom must be deeper than Perf Top.",
+		"Column order can be arbitrary. Perf Status must be perforation or squeeze. Perf Bottom must be deeper than Perf Top.",
 	production:
-		"Oil, Water, Gas, and Water Injection are optional individually, but at least one fluid column must exist and all included fluid cells must be filled.",
+		"Column order can be arbitrary. Oil, Water, Gas, and Water Injection are optional individually, but at least one fluid column must exist and all included fluid cells must be filled.",
 	lumping:
-		"Upload long format only: Zone, Well, Lumping. The backend will pivot it to Zone rows and Well columns.",
-	well: "Use one Well value per row.",
+		"Column order can be arbitrary. Upload long format only: Zone, Well, Lumping. The backend will pivot it to Zone rows and Well columns.",
+	well: "Use one Well value per row. Column order can be arbitrary as long as required names exist.",
 };

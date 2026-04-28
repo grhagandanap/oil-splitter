@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -76,6 +77,18 @@ class TestMarkerValidation:
             e["row"] == 1 and e["column"] == "Marker" and "missing" in e["message"]
             for e in errors
         )
+
+    def test_marker_accepts_legacy_alias_headers(self):
+        df = pd.DataFrame(
+            {
+                "WELL": ["W-01"],
+                "Sand": ["A"],
+                "Depth": [100.0],
+            }
+        )
+        clean, errors = validate_rows(df, "marker")
+        assert errors == []
+        assert clean == [{"Well": "W-01", "Marker": "A", "Depth": 100.0}]
 
 
 class TestSandValidation:
@@ -161,6 +174,21 @@ class TestCompletionValidation:
             for e in errors
         )
 
+    def test_completion_accepts_arbitrary_column_order_and_perf_base_alias(self):
+        df = pd.DataFrame(
+            [
+                {
+                    "Date": "2025-01-01",
+                    "Perf Status": "perforation",
+                    "Perf Base": 1200.0,
+                    "Well": "W-01",
+                    "Perf Top": 1000.0,
+                }
+            ]
+        )
+        _, errors = validate_rows(df, "completion")
+        assert errors == []
+
 
 # ── Production ──────────────────────────────────────────────────────────────
 
@@ -232,6 +260,13 @@ class TestProductionValidation:
         _, errors = validate_rows(df, "production")
         assert any("at least one fluid column" in e["message"] for e in errors)
 
+    def test_production_accepts_uppercase_legacy_fluid_headers(self):
+        df = pd.DataFrame(
+            [{"WELL": "W-01", "DATE": "2025-01-01", "OIL": 10.0, "WATER": 2.0}]
+        )
+        _, errors = validate_rows(df, "production")
+        assert errors == []
+
 
 class TestLumpingValidation:
     def test_valid_lumping_pivots_zone_index_and_well_columns(self):
@@ -254,12 +289,95 @@ class TestLumpingValidation:
         _, errors = validate_rows(df, "lumping")
         assert any("Missing required column" in e["message"] for e in errors)
 
+    def test_lumping_accepts_kh_and_sand_aliases(self):
+        df = pd.DataFrame(
+            [
+                {"Sand": "A", "WELL": "W-01", "KH": 10},
+                {"Sand": "A", "WELL": "W-02", "KH": 20},
+            ]
+        )
+        clean, errors = validate_rows(df, "lumping")
+        assert errors == []
+        assert clean == [{"Zone": "A", "W-01": 10.0, "W-02": 20.0}]
+
 
 class TestWellValidation:
     def test_valid_well_list(self):
         clean, errors = validate_rows(pd.DataFrame({"Well": ["W-01"]}), "well")
         assert errors == []
         assert clean == [{"Well": "W-01"}]
+
+
+class TestJsonSerialisation:
+    """Excel uploads return Timestamp/datetime cells; the JSONB column needs
+    plain primitives. Regression for the upload error where datetime objects
+    were not JSON serializable (paste worked because pasted cells were strings).
+    """
+
+    def test_clean_records_are_json_serialisable_for_excel_dates(self):
+        import json
+
+        df = pd.DataFrame(
+            [
+                {
+                    "Well": "W-01",
+                    "Date": pd.Timestamp("2025-01-15"),
+                    "Perf Status": "perforation",
+                    "Perf Top": 1000.0,
+                    "Perf Bottom": 1100.0,
+                }
+            ]
+        )
+        clean, errors = validate_rows(df, "completion")
+        assert errors == []
+        json.dumps(clean)
+        assert clean[0]["Date"] == "15/01/2025"
+
+    def test_date_strings_normalised_to_dd_mm_yyyy_for_completion(self):
+        df = pd.DataFrame(
+            [
+                _completion_row(date="13/1/2007"),
+                _completion_row(date="13/01/2007"),
+                _completion_row(date="2007-01-13"),
+                _completion_row(date="2007-01-13T00:00:00"),
+            ]
+        )
+        clean, errors = validate_rows(df, "completion")
+        assert errors == []
+        assert all(row["Date"] == "13/01/2007" for row in clean)
+
+    def test_excel_timestamp_normalised_to_dd_mm_yyyy_for_production(self):
+        df = pd.DataFrame(
+            [
+                {
+                    "Well": "W-01",
+                    "Date": pd.Timestamp("1971-12-07"),
+                    "Oil": 100.0,
+                }
+            ]
+        )
+        clean, errors = validate_rows(df, "production")
+        assert errors == []
+        assert clean[0]["Date"] == "07/12/1971"
+
+    def test_unparseable_date_left_for_validation(self):
+        df = pd.DataFrame([_completion_row(date="not-a-date")])
+        clean, _ = validate_rows(df, "completion")
+        assert clean[0]["Date"] == "not-a-date"
+
+    def test_numpy_scalars_are_unwrapped(self):
+        import json
+
+        df = pd.DataFrame(
+            {
+                "Well": np.array(["W-01"], dtype=object),
+                "Marker": np.array(["A"], dtype=object),
+                "Depth": np.array([100.0], dtype=np.float64),
+            }
+        )
+        clean, errors = validate_rows(df, "marker")
+        assert errors == []
+        json.dumps(clean)
 
 
 # ── Empty input ─────────────────────────────────────────────────────────────

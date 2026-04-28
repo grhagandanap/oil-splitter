@@ -196,7 +196,11 @@ export function DatasetPanel({ projectId, kind }: Props) {
 								<h3 className="mb-2 text-sm font-semibold text-(--sea-ink-soft)">
 									Preview
 								</h3>
-								<PreviewTable rows={detailQuery.data.raw_data ?? []} />
+								<PreviewTable
+									rows={detailQuery.data.raw_data ?? []}
+									kind={kind}
+									totalRows={detailQuery.data.row_count}
+								/>
 							</div>
 						</>
 					) : null}
