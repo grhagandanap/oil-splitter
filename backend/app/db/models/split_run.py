@@ -38,6 +38,11 @@ class SplitRun(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     # Snapshot of which dataset rows fed this run (id per kind).
     dataset_ids: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # Markered production after gap-fill: ``WELL``, ``DATE``, fluids, sand
+    # columns with ``"p"`` — shown as the “Perforation marker” tab in the UI.
+    marker_preview: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSONB, nullable=True
+    )
     # Per-row allocated volumes for each fluid × sand combination.
     detail: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
     # Sand-level totals.

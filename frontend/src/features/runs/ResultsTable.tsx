@@ -13,6 +13,31 @@ type Props = {
 	emptyMessage?: string;
 };
 
+/** Human-friendly column titles (API still uses engine keys: WELL, WINJ, …). */
+export function formatResultsHeader(key: string): string {
+	const base: Record<string, string> = {
+		WELL: "Well",
+		DATE: "Date",
+		OIL: "Oil",
+		WATER: "Water",
+		GAS: "Gas",
+		WINJ: "Water Injection",
+		Sand: "Sand",
+	};
+	if (base[key]) return base[key];
+	const total = /^Total_(.+)$/.exec(key);
+	if (total?.[1]) {
+		const fluid = total[1];
+		return `Total ${base[fluid] ?? fluid}`;
+	}
+	const split = /^(OIL|WATER|GAS|WINJ)_(.+)$/.exec(key);
+	if (split) {
+		const fluid = base[split[1]] ?? split[1];
+		return `${fluid} (${split[2]})`;
+	}
+	return key;
+}
+
 export function ResultsTable({
 	rows,
 	maxRows = 25,
@@ -40,7 +65,7 @@ export function ResultsTable({
 		() =>
 			headers.map((header) => ({
 				accessorKey: header,
-				header,
+				header: formatResultsHeader(header),
 				cell: ({ getValue }) => formatCell(getValue()),
 			})),
 		[headers],

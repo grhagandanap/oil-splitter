@@ -1,9 +1,11 @@
 import {
 	AlertTriangle,
 	CheckCircle2,
+	CircleDot,
 	Download,
 	History,
 	Play,
+	Table2,
 	XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -18,9 +20,21 @@ import { useRun, useRuns, useStartRun } from "./hooks";
 import { ResultsTable } from "./ResultsTable";
 import type { ExportFormat, RunTable, SplitRun } from "./types";
 
-type ResultTab = RunTable;
+/** Top level: markered production with ``p`` vs KH split output. */
+type MainViewTab = "marker" | "split";
 
-const RESULT_TABS: TabItem<ResultTab>[] = [
+const MAIN_TABS: TabItem<MainViewTab>[] = [
+	{
+		value: "marker",
+		label: "Perforation marker",
+		icon: <CircleDot size={14} />,
+	},
+	{ value: "split", label: "Split result", icon: <Table2 size={14} /> },
+];
+
+type SplitSubTab = "summary" | "detail";
+
+const SPLIT_TABS: TabItem<SplitSubTab>[] = [
 	{ value: "summary", label: "Summary (per sand)" },
 	{ value: "detail", label: "Detail (per row)" },
 ];
@@ -34,7 +48,8 @@ export function ResultsPanel({ projectId }: Props) {
 	const startRun = useStartRun(projectId);
 
 	const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
-	const [resultTab, setResultTab] = useState<ResultTab>("summary");
+	const [mainTab, setMainTab] = useState<MainViewTab>("marker");
+	const [splitSubTab, setSplitSubTab] = useState<SplitSubTab>("summary");
 	const [actionError, setActionError] = useState<string | null>(null);
 	const [exporting, setExporting] = useState<{
 		table: RunTable;
@@ -75,6 +90,10 @@ export function ResultsPanel({ projectId }: Props) {
 	}
 
 	const activeRun = detailQuery.data;
+	const markerRows = useMemo(
+		() => activeRun?.marker_preview ?? [],
+		[activeRun?.marker_preview],
+	);
 	const summaryRows = useMemo(
 		() => activeRun?.summary ?? [],
 		[activeRun?.summary],
@@ -82,6 +101,16 @@ export function ResultsPanel({ projectId }: Props) {
 	const detailRows = useMemo(
 		() => activeRun?.detail ?? [],
 		[activeRun?.detail],
+	);
+
+	const exportTable: RunTable = useMemo(
+		() =>
+			mainTab === "marker"
+				? "marker"
+				: splitSubTab === "summary"
+					? "summary"
+					: "detail",
+		[mainTab, splitSubTab],
 	);
 
 	return (
@@ -141,19 +170,15 @@ export function ResultsPanel({ projectId }: Props) {
 						<WarningsBlock warnings={activeRun.warnings ?? []} />
 					) : null}
 
-					<div className="flex flex-wrap items-center justify-between gap-3">
-						<Tabs
-							items={RESULT_TABS}
-							value={resultTab}
-							onChange={setResultTab}
-						/>
+					<div className="flex flex-wrap items-center justify-between gap-3 border-b border-(--line)/70 pb-1">
+						<Tabs items={MAIN_TABS} value={mainTab} onChange={setMainTab} />
 						<div className="flex flex-wrap items-center gap-2">
 							<Button
 								size="sm"
 								variant="secondary"
-								onClick={() => onExport(resultTab, "csv")}
+								onClick={() => onExport(exportTable, "csv")}
 								isLoading={
-									exporting?.table === resultTab && exporting.format === "csv"
+									exporting?.table === exportTable && exporting.format === "csv"
 								}
 							>
 								<Download size={14} />
@@ -162,9 +187,10 @@ export function ResultsPanel({ projectId }: Props) {
 							<Button
 								size="sm"
 								variant="secondary"
-								onClick={() => onExport(resultTab, "xlsx")}
+								onClick={() => onExport(exportTable, "xlsx")}
 								isLoading={
-									exporting?.table === resultTab && exporting.format === "xlsx"
+									exporting?.table === exportTable &&
+									exporting.format === "xlsx"
 								}
 							>
 								<Download size={14} />
@@ -173,19 +199,50 @@ export function ResultsPanel({ projectId }: Props) {
 						</div>
 					</div>
 
-					{resultTab === "summary" ? (
-						<ResultsTable
-							rows={summaryRows}
-							maxRows={summaryRows.length}
-							totalRows={summaryRows.length}
-							emptyMessage="No summary rows."
-						/>
+					{mainTab === "marker" ? (
+						<div className="space-y-3">
+							<p className="text-xs leading-relaxed text-(--sea-ink-soft)">
+								<strong className="text-(--sea-ink)">Perforation marker</strong>{" "}
+								shows production rows after marker assignment and gap-fill. Sand
+								columns use{" "}
+								<code className="rounded bg-(--surface) px-1 text-(--sea-ink)">
+									p
+								</code>{" "}
+								where that sand is open for the timestep (before KH split).
+								Middle gaps left unresolved are flagged in warnings above — use
+								<strong className="text-(--sea-ink)"> Data inputs</strong> to
+								fix source data or add rows before re-running.
+							</p>
+							<ResultsTable
+								rows={markerRows}
+								maxRows={25}
+								emptyMessage="No perforation preview rows."
+							/>
+						</div>
 					) : (
-						<ResultsTable
-							rows={detailRows}
-							maxRows={25}
-							emptyMessage="No detail rows."
-						/>
+						<div className="space-y-4">
+							<div className="flex flex-wrap items-center gap-4">
+								<Tabs
+									items={SPLIT_TABS}
+									value={splitSubTab}
+									onChange={setSplitSubTab}
+								/>
+							</div>
+							{splitSubTab === "summary" ? (
+								<ResultsTable
+									rows={summaryRows}
+									maxRows={summaryRows.length}
+									totalRows={summaryRows.length}
+									emptyMessage="No summary rows."
+								/>
+							) : (
+								<ResultsTable
+									rows={detailRows}
+									maxRows={25}
+									emptyMessage="No detail rows."
+								/>
+							)}
+						</div>
 					)}
 				</div>
 			)}

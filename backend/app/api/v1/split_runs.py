@@ -111,6 +111,7 @@ async def run_split(project_id: int, db: DbSession, user: CurrentUser):
             detail=f"Run failed: {exc}",
         ) from exc
 
+    run.marker_preview = artifacts.marker_preview
     run.detail = artifacts.detail
     run.summary = artifacts.summary
     run.warnings = artifacts.warnings
@@ -156,7 +157,7 @@ async def export_run(
     run_id: int,
     db: DbSession,
     user: CurrentUser,
-    table: str = Query("detail", pattern="^(detail|summary)$"),
+    table: str = Query("detail", pattern="^(detail|summary|marker)$"),
     format: str = Query("csv", pattern="^(csv|xlsx)$"),
 ):
     """Stream the full ``detail`` or ``summary`` table as CSV / XLSX.
@@ -181,7 +182,16 @@ async def export_run(
             detail="Run is not in a succeeded state.",
         )
 
-    rows: list[dict] = list((run.detail if table == "detail" else run.summary) or [])
+    rows: list[dict] = list(
+        (
+            run.marker_preview
+            if table == "marker"
+            else run.detail
+            if table == "detail"
+            else run.summary
+        )
+        or []
+    )
     if not rows:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -271,6 +281,7 @@ def _build_detail_response(run: SplitRun) -> SplitRunDetail:
     above to download the complete table.
     """
     detail = list(run.detail or [])
+    marker_preview = list(run.marker_preview or [])
     return SplitRunDetail(
         id=run.id,
         project_id=run.project_id,
@@ -280,6 +291,7 @@ def _build_detail_response(run: SplitRun) -> SplitRunDetail:
         warnings=run.warnings,
         created_at=run.created_at,
         completed_at=run.completed_at,
+        marker_preview=marker_preview[:_DETAIL_ROW_LIMIT],
         detail=detail[:_DETAIL_ROW_LIMIT],
         summary=list(run.summary or []),
     )

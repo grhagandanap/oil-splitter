@@ -23,7 +23,7 @@ import pandas as pd  # pyright: ignore[reportMissingImports]
 
 from app.services.gap_filler import detect_gaps
 from app.services.marker_engine import auto_marker
-from app.services.splitter_engine import split
+from app.services.splitter_engine import FLUID_COLUMNS, split
 
 # ── Required dataset kinds ───────────────────────────────────────────────────
 
@@ -37,9 +37,15 @@ REQUIRED_KINDS = ("marker", "sand", "completion", "production", "lumping", "well
 class RunArtifacts:
     """JSON-serialisable outputs ready to persist on a ``SplitRun``."""
 
+    marker_preview: list[dict[str, Any]]
     detail: list[dict[str, Any]]
     summary: list[dict[str, Any]]
     warnings: list[str]
+
+
+# Display order: WELL, DATE, then production fluids in this order, then
+# optional engine columns, then sand / marker columns.
+_FLUID_DISPLAY_ORDER = ("OIL", "WATER", "GAS", "WINJ")
 
 
 class RunInputError(ValueError):
@@ -91,13 +97,20 @@ def execute_run(datasets_by_kind: dict[str, list[dict[str, Any]]]) -> RunArtifac
                 f"rows={gap.start_row}..{gap.end_row}"
             )
 
-    # 3. Splitter.
+    # 3. Splitter — only allocates columns for fluids present on production.
     result = split(filled, lumping_df, well_list, sands)
     warnings.extend(result.warnings)
 
+    active_fluids = [f for f in _FLUID_DISPLAY_ORDER if f in filled.columns]
+
+    marker_ordered = _reorder_marker_df(filled, sands)
+    detail_ordered = _reorder_split_detail(result.detail, sands, active_fluids)
+    summary_ordered = _reorder_summary_df(result.summary, active_fluids)
+
     return RunArtifacts(
-        detail=_df_to_records(result.detail),
-        summary=_df_to_records(result.summary),
+        marker_preview=_df_to_records(marker_ordered),
+        detail=_df_to_records(detail_ordered),
+        summary=_df_to_records(summary_ordered),
         warnings=warnings,
     )
 
@@ -290,3 +303,54 @@ def _to_json_value(value: Any) -> Any:
 def _df_to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
     records = df.where(df.notna(), other=None).to_dict(orient="records")
     return [{k: _to_json_value(v) for k, v in row.items()} for row in records]
+
+
+def _reorder_marker_df(df: pd.DataFrame, sands: list[str]) -> pd.DataFrame:
+    """WELL, DATE, fluid inputs (OIL…), optional engine extras, sand ``p`` columns."""
+    fluids = [f for f in _FLUID_DISPLAY_ORDER if f in df.columns]
+    prefix = [c for c in ("WELL", "DATE") if c in df.columns]
+    engine_extra = [
+        c
+        for c in df.columns
+        if c not in prefix
+        and c not in fluids
+        and c not in sands
+        and not (c in FLUID_COLUMNS and c not in fluids)
+    ]
+    sand_cols = [s for s in sands if s in df.columns]
+    tail = [c for c in df.columns if c not in prefix + fluids + engine_extra + sand_cols]
+    ordered = [*prefix, *fluids, *engine_extra, *sand_cols, *tail]
+    return df[ordered]
+
+
+def _reorder_split_detail(
+    df: pd.DataFrame, sands: list[str], active_fluids: list[str]
+) -> pd.DataFrame:
+    """WELL, DATE, fluids, optional MARKER/TOP_WAY/…, allocated ``FLUID_sand`` cols."""
+    fluids = [f for f in _FLUID_DISPLAY_ORDER if f in df.columns]
+    prefix = [c for c in ("WELL", "DATE") if c in df.columns]
+    alloc: list[str] = []
+    for f in active_fluids:
+        for s in sands:
+            name = f"{f}_{s}"
+            if name in df.columns:
+                alloc.append(name)
+    meta_extra = [
+        c
+        for c in df.columns
+        if c not in prefix + fluids + alloc
+        and not any(c.startswith(f"{ff}_") for ff in FLUID_COLUMNS)
+    ]
+    tail = [c for c in df.columns if c not in prefix + fluids + meta_extra + alloc]
+    ordered = [*prefix, *fluids, *meta_extra, *alloc, *tail]
+    return df[[c for c in ordered if c in df.columns]]
+
+
+def _reorder_summary_df(summary: pd.DataFrame, active_fluids: list[str]) -> pd.DataFrame:
+    cols = [c for c in ("Sand",) if c in summary.columns]
+    for f in active_fluids:
+        key = f"Total_{f}"
+        if key in summary.columns:
+            cols.append(key)
+    tail = [c for c in summary.columns if c not in cols]
+    return summary[[*cols, *tail]]

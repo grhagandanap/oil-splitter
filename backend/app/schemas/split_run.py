@@ -26,5 +26,6 @@ class SplitRunRead(BaseModel):
 class SplitRunDetail(SplitRunRead):
     """Full payload including the detail/summary tables."""
 
+    marker_preview: list[dict[str, Any]] | None
     detail: list[dict[str, Any]] | None
     summary: list[dict[str, Any]] | None

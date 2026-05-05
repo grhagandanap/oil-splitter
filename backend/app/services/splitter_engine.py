@@ -24,8 +24,17 @@ class SplitResult:
 
 
 # ── Fluids we allocate ───────────────────────────────────────────────────────
+# Ingestion and :func:`marker_engine` use this physical order, but
+# *only* the fluid columns that exist on the production frame are
+# allocated, so a user with only *Oil* and *Water* in Production never
+# sees *GAS_* / *WINJ_* in the result.
 
 FLUID_COLUMNS = ("OIL", "GAS", "WATER", "WINJ")
+
+
+def _active_fluids(markered_df: pd.DataFrame) -> tuple[str, ...]:
+    """Fluids present on ``markered_df`` (subset of ``FLUID_COLUMNS`` order)."""
+    return tuple(f for f in FLUID_COLUMNS if f in markered_df.columns)
 
 
 def _safe_float(v: Any) -> float:
@@ -74,11 +83,19 @@ def split(
     """
     warnings: list[str] = []
 
+    active_fluids = _active_fluids(markered_df)
+    if not active_fluids:
+        raise ValueError(
+            "markered_df must have at least one of "
+            + ", ".join(FLUID_COLUMNS)
+            + " (production fluids)."
+        )
+
     meta_cols = [c for c in markered_df.columns if c not in sands]
     detail = markered_df[meta_cols].copy()
 
     for s in sands:
-        for fluid in FLUID_COLUMNS:
+        for fluid in active_fluids:
             detail[f"{fluid}_{s}"] = 0.0
 
     for well in well_list:
@@ -110,15 +127,14 @@ def split(
                 if total_kh > 0 and s in open_sands:
                     kh = _safe_float(lumping_df.at[s, well_str]) if s in lumping_df.index else 0.0
                     fraction = kh / total_kh
-                    for fluid in FLUID_COLUMNS:
-                        if fluid in markered_df.columns:
-                            vol = _safe_float(markered_df.at[idx, fluid])
-                            detail.at[idx, f"{fluid}_{s}"] = vol * fraction
+                    for fluid in active_fluids:
+                        vol = _safe_float(markered_df.at[idx, fluid])
+                        detail.at[idx, f"{fluid}_{s}"] = vol * fraction
 
     summary_rows: list[dict[str, Any]] = []
     for s in sands:
         row: dict[str, Any] = {"Sand": s}
-        for fluid in FLUID_COLUMNS:
+        for fluid in active_fluids:
             col = f"{fluid}_{s}"
             row[f"Total_{fluid}"] = float(detail[col].sum()) if col in detail.columns else 0.0
         summary_rows.append(row)

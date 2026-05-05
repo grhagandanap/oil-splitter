@@ -80,6 +80,7 @@ class TestHappyPath:
         artifacts = execute_run(_project_datasets())
 
         # JSON round-trip — guards against datetime / numpy leakage.
+        json.dumps(artifacts.marker_preview)
         json.dumps(artifacts.detail)
         json.dumps(artifacts.summary)
 
@@ -137,3 +138,28 @@ class TestHappyPath:
 
         artifacts = execute_run(ds)
         assert any("W-99" in w and "lumping" in w for w in artifacts.warnings)
+
+    def test_marker_preview_shows_p_in_sand_columns(self):
+        artifacts = execute_run(_project_datasets())
+        assert len(artifacts.marker_preview) >= 1
+        found_p = any(
+            str(row.get(sand, "") or "").strip().upper() == "P"
+            for row in artifacts.marker_preview
+            for sand in ("S1", "S2", "S3")
+        )
+        assert found_p, "expected at least one open sand cell with marker 'p'"
+
+    def test_oil_water_only_production_omits_gas_and_winj_split_columns(self):
+        ds = _project_datasets()
+        ds["production"] = [
+            {k: v for k, v in row.items() if k not in ("Gas", "Water Injection")}
+            for row in ds["production"]
+        ]
+        artifacts = execute_run(ds)
+        for row in artifacts.detail:
+            for key in row:
+                assert not key.startswith("GAS_")
+                assert not key.startswith("WINJ_")
+        for srow in artifacts.summary:
+            assert "Total_GAS" not in srow
+            assert "Total_WINJ" not in srow

@@ -35,4 +35,4 @@ class Dataset(Base):
         nullable=False,
     )
 
-    project: Mapped["Project"] = relationship(back_populates="datasets")
+    project: Mapped["Project"] = relationship(back_populates="datasets")  # pyright: ignore[reportUndefinedVariable]

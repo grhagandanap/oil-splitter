@@ -117,3 +117,23 @@ class TestSplit:
         result = split(prod, _lumping(), ["W-01"], SANDS)
         assert result.detail.at[0, "OIL_S1"] == pytest.approx(100 * 50 / 150)
         assert result.detail.at[0, "OIL_S2"] == pytest.approx(100 * 100 / 150)
+
+    def test_only_fluids_present_in_production_get_allocated_columns(self):
+        """If *GAS* and *WINJ* are absent from production, no GAS_* / WINJ_* split."""
+        prod = pd.DataFrame({
+            "WELL": ["W-01", "W-01"],
+            "DATE": pd.to_datetime(["2025-01-01", "2025-02-01"]),
+            "OIL": [300.0, 200.0],
+            "WATER": [150.0, 100.0],
+            "S1": ["p", pd.NA],
+            "S2": ["p", "p"],
+            "S3": [pd.NA, pd.NA],
+        })
+        result = split(prod, _lumping(), ["W-01"], SANDS)
+        alloc_cols = [c for c in result.detail.columns if "_" in c and c.split("_", 1)[0] in {"OIL", "GAS", "WATER", "WINJ"}]
+        assert not any(c.startswith("GAS_") for c in alloc_cols)
+        assert not any(c.startswith("WINJ_") for c in alloc_cols)
+        assert "Total_GAS" not in result.summary.columns
+        assert "Total_WINJ" not in result.summary.columns
+        assert "Total_OIL" in result.summary.columns
+        assert "Total_WATER" in result.summary.columns
