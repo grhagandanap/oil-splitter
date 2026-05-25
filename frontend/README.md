@@ -38,16 +38,19 @@ If you prefer not to use Tailwind CSS:
 3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
 4. Uninstall the packages: `pnpm add @tailwindcss/vite tailwindcss --dev`
 
-## Linting & Formatting
 
-This project uses [Biome](https://biomejs.dev/) for linting and formatting. The following scripts are available:
+## Deploy with Nitro
 
+This project uses Nitro as a generic server adapter, so it can run on any Node-compatible host.
 
 ```bash
-pnpm lint
-pnpm format
-pnpm check
+npm run build
+node dist/server/index.mjs
 ```
+
+The build output is a self-contained Node server. To deploy, push the `dist/` directory to your host (Render, Fly.io, your own VPS, etc.) and run the server command above.
+
+For host-specific presets (Vercel, Netlify, Cloudflare, AWS Lambda, etc.) and tuning, see https://v3.nitro.build/deploy.
 
 
 ## Shadcn
