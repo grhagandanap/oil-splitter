@@ -1,16 +1,16 @@
 # Oil Splitter - TODO List
 
 ## Phase 1: Environment Setup
-- [ ] Initialize Git repository
-- [ ] Setup monorepo structure (`/frontend` and `/backend`)
-- [ ] Configure backend environment (FastAPI, Neon DB connection, Alembic)
-- [ ] Configure frontend environment (Vite + React + TanStack Router + TailwindCSS + Shadcn UI)
+- [x] Initialize Git repository
+- [x] Setup monorepo structure (`/frontend` and `/backend`)
+- [x] Configure backend environment (FastAPI, Neon DB connection, Alembic)
+- [x] Configure frontend environment (Vite + React + TanStack Router + TailwindCSS + Shadcn UI)
 
 ## Phase 2: Backend Auth & Database
-- [ ] Implement DB schema and Alembic migrations (User, Project, DataFiles, ExecutionHistory)
-- [ ] Implement User authentication models
-- [ ] Create `/auth/register` and `/auth/login` API endpoints (bcrypt hashing)
-- [ ] Setup JWT issuance and validation middleware for protected routes
+- [x] Implement DB schema and Alembic migrations (User, Project, DataFiles, ExecutionHistory)
+- [x] Implement User authentication models
+- [x] Create `/auth/register` and `/auth/login` API endpoints (bcrypt hashing)
+- [x] Setup JWT issuance and validation middleware for protected routes
 
 ## Phase 3: Frontend Scaffolding & Auth UI
 - [ ] Implement application layout and TanStack routing
