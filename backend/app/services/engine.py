@@ -67,15 +67,23 @@ _PRODUCTION_COLS: Dict[str, List[str]] = {
     "WELL":  ["well", "uwi", "well name", "wellname"],
     "DATE":  ["date", "month", "period"],
     "OIL":   ["oil", "oil rate", "qo", "oil production", "bopd", "oil (bbl)",
-              "oil (bopd)", "oil vol", "oil volume", "gross oil"],
+              "oil (bopd)", "oil vol", "oil volume", "gross oil",
+              "alloc_o", "alloc o", "alloc_oil", "alloc oil", "allocated oil",
+              "oil alloc", "oil allocation"],
     "WATER": ["water", "water rate", "water production", "wtr", "qw", "bwpd",
               "water (bbl)", "water (bwpd)", "water vol", "water volume",
-              "produced water", "water prod"],
+              "produced water", "water prod",
+              "alloc_w", "alloc w", "alloc_water", "alloc water", "allocated water",
+              "water alloc", "water allocation"],
     "GAS":   ["gas", "gas rate", "gas production", "qg", "mmscfd", "mcfd",
-              "gas (mcf)", "gas (mmscfd)", "gas vol", "gas volume"],
+              "gas (mcf)", "gas (mmscfd)", "gas vol", "gas volume",
+              "alloc_g", "alloc g", "alloc_gas", "alloc gas", "allocated gas",
+              "gas alloc", "gas allocation"],
     "WINJ":  ["winj", "water injection", "wi", "water inj", "water_inj", "qwi",
               "inj", "injection", "water inject", "winj (bbl)", "w inj",
-              "water injected"],
+              "water injected",
+              "alloc_wi", "alloc wi", "alloc_winj", "alloc winj",
+              "allocated water inj", "allocated winj", "water inj alloc"],
 }
 
 _LUMPING_COLS: Dict[str, List[str]] = {
@@ -154,6 +162,18 @@ def load_inputs(
     _validate_required(lumping_raw,   ["Well", "Zone", "Lumping"],                       "Lumping")
 
     _validate_completion_data(completion_df)
+
+    # Strip whitespace from identifier cell values to prevent silent mismatches
+    for _df, _col in [
+        (marker_df,     "Well"),
+        (completion_df, "WELL"),
+        (production_df, "WELL"),
+        (lumping_raw,   "Well"),
+        (lumping_raw,   "Zone"),
+        (sand_df,       "Marker"),
+    ]:
+        if _col in _df.columns:
+            _df[_col] = _df[_col].astype(str).str.strip()
 
     lumping_df = lumping_raw.pivot_table(
         index="Zone", columns="Well", values="Lumping", aggfunc="first"
@@ -484,52 +504,99 @@ def run_splitting(
     lumping_df: pd.DataFrame,
     sand_list: List[str],
     fluid_cols: Optional[List[str]] = None,
+    log_fn: Optional[Callable] = None,
 ) -> pd.DataFrame:
     """
     Distribute well-level fluid volumes across sand zones using kh weights.
 
     marked_production : output of run_squeeze() — has 'p' markers per sand column
-    lumping_df        : index="Zone log" (sand names), columns=well names, values=kh
+    lumping_df        : index=zone names, columns=well names, values=kh weights
     fluid_cols        : which columns to split (default auto-detect OIL/WATER/GAS/WINJ)
+
+    Output keeps ALL columns from marked_production (including sand 'p' marker
+    columns) and appends the per-fluid, per-sand split columns at the end.
     """
+    _warn = log_fn if log_fn else lambda m: logger.warning(m)
+
     if fluid_cols is None:
         fluid_cols = [c for c in ["OIL", "WATER", "GAS", "WINJ"] if c in marked_production.columns]
 
-    non_sand_cols = [c for c in marked_production.columns if c not in sand_list]
-    df = marked_production[non_sand_cols].copy()
+    # Keep ALL columns (including sand 'p' columns) so the split sheet mirrors
+    # the structure of the Marked Production sheet.
+    df = marked_production.copy()
 
+    # Initialise split-value columns as NaN before filling
     for s in sand_list:
         for fluid in fluid_cols:
             df[f"{fluid}_{s}"] = np.nan
 
+    # Case-insensitive + stripped mapping: normalised_well → lumping column name
+    lump_col_map: Dict[str, str] = {
+        str(w).strip().lower(): str(w) for w in lumping_df.columns
+    }
+    # Case-insensitive + stripped mapping: normalised_zone → lumping index label
+    lumping_df = lumping_df.copy()
+    lumping_df.index = lumping_df.index.astype(str).str.strip()
+    zone_idx_map: Dict[str, str] = {
+        z.lower(): z for z in lumping_df.index
+    }
+
+    # Diagnostic counters
+    wells_no_lumping: set = set()
+    zero_kh_wells: set  = set()
+
     for row_idx, row in marked_production.iterrows():
-        well = str(row.get("WELL", ""))
-        if well not in lumping_df.columns:
+        well_raw  = str(row.get("WELL") or "").strip()
+        lump_well = lump_col_map.get(well_raw.lower())
+
+        if lump_well is None:
+            wells_no_lumping.add(well_raw)
             for s in sand_list:
                 for fluid in fluid_cols:
                     df.at[row_idx, f"{fluid}_{s}"] = 0.0
             continue
 
-        well_kh  = lumping_df[well]
-        total_kh = 0.0
+        well_kh_series = lumping_df[lump_well]
+
+        # Build zone → kh dict for this well (case-insensitive zone matching)
+        kh_for_well: Dict[str, float] = {}
+        for s in sand_list:
+            z_norm = zone_idx_map.get(s.strip().lower())
+            if z_norm is not None:
+                v = well_kh_series.get(z_norm, np.nan)
+                if not pd.isna(v):
+                    kh_for_well[s] = float(v)
+
+        # Active perforated zones for this row
+        active_zones = [s for s in sand_list if row.get(s) == "p"]
+
+        total_kh = sum(kh_for_well.get(s, 0.0) for s in active_zones)
+
+        if total_kh == 0.0 and active_zones:
+            zero_kh_wells.add(well_raw)
 
         for s in sand_list:
-            if row.get(s) == "p":
-                kh_val = well_kh.get(s, np.nan)
-                if not pd.isna(kh_val):
-                    total_kh += float(kh_val)
-
-        for s in sand_list:
-            kh_val = well_kh.get(s, np.nan)
-            perf   = row.get(s) == "p"
+            kv   = kh_for_well.get(s, np.nan)
+            perf = s in active_zones
 
             for fluid in fluid_cols:
-                if total_kh > 0 and perf and not pd.isna(kh_val):
+                if total_kh > 0 and perf and not np.isnan(kv):
                     raw = row.get(fluid, 0)
-                    val = float(raw if not pd.isna(raw) else 0) * float(kh_val) / total_kh
+                    val = float(raw if not pd.isna(raw) else 0) * kv / total_kh
                 else:
                     val = 0.0
                 df.at[row_idx, f"{fluid}_{s}"] = val
+
+    # ── Diagnostics ────────────────────────────────────────────────────────────
+    if wells_no_lumping:
+        _warn(f"  [Split] Wells with 'p' markers but NOT in lumping → splits forced to 0: "
+              f"{sorted(wells_no_lumping)}")
+    if zero_kh_wells:
+        _warn(f"  [Split] Wells where total_kh=0 despite 'p' markers → splits are 0. "
+              f"Check that zone names in lumping match sand list exactly: "
+              f"{sorted(zero_kh_wells)}")
+        _warn(f"  [Split]   Lumping zones : {list(lumping_df.index)}")
+        _warn(f"  [Split]   Sand list     : {sand_list}")
 
     return df
 
@@ -537,13 +604,22 @@ def run_splitting(
 # ── Phase 4: Summary ───────────────────────────────────────────────────────────
 
 def run_summary(split_df: pd.DataFrame, sand_list: List[str]) -> pd.DataFrame:
-    """Aggregate cumulative split volumes per sand zone."""
+    """Aggregate cumulative split volumes per sand zone.
+
+    Only includes fluid columns that actually have split output in split_df.
+    """
+    fluid_order = ["OIL", "WATER", "GAS", "WINJ"]
+    active_fluids = [
+        f for f in fluid_order
+        if any(f"{f}_{s}" in split_df.columns for s in sand_list)
+    ]
+
     rows = []
     for s in sand_list:
-        row = {"Sand": s}
-        for fluid in ["OIL", "WATER", "GAS", "WINJ"]:
-            cols = [c for c in split_df.columns if c == f"{fluid}_{s}"]
-            row[fluid] = float(split_df[cols].sum().sum()) if cols else 0.0
+        row: Dict[str, object] = {"Sand": s}
+        for fluid in active_fluids:
+            col = f"{fluid}_{s}"
+            row[fluid] = float(split_df[col].sum()) if col in split_df.columns else 0.0
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -587,7 +663,7 @@ def run_engine(
 
     marker_df     = inputs["marker"]
     completion_df = inputs["completion"]
-    sand_list     = inputs["sand"]["Marker"].dropna().tolist()
+    sand_list     = inputs["sand"]["Marker"].dropna().astype(str).str.strip().tolist()
     production_df = inputs["production"]
     lumping_df    = inputs["lumping"]  # already pivoted: index=zone, cols=wells
 
@@ -606,7 +682,9 @@ def run_engine(
     _log(f"  Annotated {len(marked_production)} production rows.")
 
     _log("Phase 3 — Splitting machine...")
-    split_df = run_splitting(marked_production, lumping_df, sand_list)
+    _log(f"  Lumping wells ({len(lumping_df.columns)}): {list(lumping_df.columns)}")
+    _log(f"  Lumping zones ({len(lumping_df.index)}): {list(lumping_df.index)}")
+    split_df = run_splitting(marked_production, lumping_df, sand_list, log_fn=_log)
     _log(f"  Generated {len(split_df.columns)} output columns.")
 
     _log("Phase 4 — Summary...")
