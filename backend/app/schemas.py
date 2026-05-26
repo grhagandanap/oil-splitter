@@ -54,6 +54,7 @@ class DataFileResponse(BaseModel):
     project_id: UUID
     file_type: FileType
     original_filename: str
+    sheet_name: Optional[str]
     storage_path: str
     uploaded_at: datetime
 
@@ -70,6 +71,7 @@ class ProjectWithFiles(ProjectResponse):
 class ExecutionHistoryResponse(BaseModel):
     id: UUID
     project_id: UUID
+    status: ProjectStatus
     result_file_url: Optional[str]
     logs: Optional[str]
     executed_at: datetime

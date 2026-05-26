@@ -4,13 +4,14 @@ from pathlib import Path
 from uuid import UUID
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.dependencies import get_current_user
-from app.models import FileType
+from app.models import FileType, ProjectStatus
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "uploads"))
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
@@ -186,4 +187,122 @@ def get_history(
         .filter(models.ExecutionHistory.project_id == project_id)
         .order_by(models.ExecutionHistory.executed_at.desc())
         .all()
+    )
+
+
+# ── Execute ────────────────────────────────────────────────────────────────────
+
+def _run_engine_background(
+    exec_id: UUID,
+    project_id: UUID,
+    file_map: dict,
+    output_path: str,
+) -> None:
+    from app.services.engine import run_engine
+
+    db = SessionLocal()
+    logs: list[str] = []
+
+    try:
+        run_engine(
+            marker_path=file_map[FileType.marker],
+            completion_path=file_map[FileType.completion],
+            sand_path=file_map[FileType.well],
+            production_path=file_map[FileType.production],
+            lumping_path=file_map[FileType.lumping],
+            output_path=output_path,
+            log_fn=lambda msg: logs.append(msg),
+        )
+        execution = db.query(models.ExecutionHistory).filter_by(id=exec_id).first()
+        if execution:
+            execution.status = ProjectStatus.completed
+            execution.result_file_url = output_path
+            execution.logs = "\n".join(logs)
+        project = db.query(models.Project).filter_by(id=project_id).first()
+        if project:
+            project.status = ProjectStatus.completed
+        db.commit()
+    except Exception as exc:
+        execution = db.query(models.ExecutionHistory).filter_by(id=exec_id).first()
+        if execution:
+            execution.status = ProjectStatus.failed
+            execution.logs = f"ERROR: {exc}\n" + "\n".join(logs)
+        project = db.query(models.Project).filter_by(id=project_id).first()
+        if project:
+            project.status = ProjectStatus.failed
+        db.commit()
+    finally:
+        db.close()
+
+
+@router.post(
+    "/{project_id}/execute",
+    response_model=schemas.ExecutionHistoryResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def execute_project(
+    project_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    project = _get_project_or_404(project_id, current_user, db)
+
+    files = (
+        db.query(models.DataFile)
+        .filter(models.DataFile.project_id == project_id)
+        .all()
+    )
+    file_map = {f.file_type: f.storage_path for f in files}
+    required = {FileType.marker, FileType.well, FileType.production, FileType.completion, FileType.lumping}
+    missing = required - set(file_map.keys())
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing files: {', '.join(sorted(m.value for m in missing))}",
+        )
+
+    output_path = str(UPLOAD_DIR / str(project_id) / "result.xlsx")
+
+    execution = models.ExecutionHistory(
+        project_id=project_id,
+        status=ProjectStatus.processing,
+    )
+    db.add(execution)
+    project.status = ProjectStatus.processing
+    db.commit()
+    db.refresh(execution)
+
+    background_tasks.add_task(
+        _run_engine_background,
+        exec_id=execution.id,
+        project_id=project_id,
+        file_map=file_map,
+        output_path=output_path,
+    )
+    return execution
+
+
+@router.get("/{project_id}/history/{execution_id}/download")
+def download_result(
+    project_id: UUID,
+    execution_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    _get_project_or_404(project_id, current_user, db)
+    execution = (
+        db.query(models.ExecutionHistory)
+        .filter_by(id=execution_id, project_id=project_id)
+        .first()
+    )
+    if not execution or not execution.result_file_url:
+        raise HTTPException(404, "Result not available yet")
+    path = Path(execution.result_file_url)
+    if not path.exists():
+        raise HTTPException(404, "Result file not found on disk")
+    return FileResponse(
+        str(path),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=f"result_{execution_id}.xlsx",
     )

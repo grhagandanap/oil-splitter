@@ -97,6 +97,7 @@ export interface ProjectWithFiles extends ProjectResponse {
 export interface ExecutionHistoryResponse {
   id: string
   project_id: string
+  status: 'pending' | 'processing' | 'completed' | 'failed'
   result_file_url: string | null
   logs: string | null
   executed_at: string
@@ -133,4 +134,10 @@ export const projectsApi = {
 
   getHistory: (projectId: string) =>
     api.get<ExecutionHistoryResponse[]>(`/projects/${projectId}/history`),
+
+  execute: (projectId: string) =>
+    request<ExecutionHistoryResponse>(`/projects/${projectId}/execute`, { method: 'POST' }),
+
+  downloadResult: (projectId: string, executionId: string) =>
+    `${API_URL}/projects/${projectId}/history/${executionId}/download`,
 }
