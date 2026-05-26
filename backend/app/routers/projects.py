@@ -2,9 +2,9 @@ import os
 import shutil
 from pathlib import Path
 from uuid import UUID
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -111,6 +111,7 @@ async def upload_file(
     project_id: UUID,
     file_type: FileType,
     file: UploadFile = File(...),
+    sheet_name: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -141,6 +142,7 @@ async def upload_file(
     if existing:
         existing.storage_path = str(dest)
         existing.original_filename = file.filename
+        existing.sheet_name = sheet_name
         db.commit()
         db.refresh(existing)
         return existing
@@ -149,6 +151,7 @@ async def upload_file(
         project_id=project_id,
         file_type=file_type,
         original_filename=file.filename,
+        sheet_name=sheet_name,
         storage_path=str(dest),
     )
     db.add(data_file)
@@ -196,6 +199,7 @@ def _run_engine_background(
     exec_id: UUID,
     project_id: UUID,
     file_map: dict,
+    sheet_map: dict,
     output_path: str,
 ) -> None:
     from app.services.engine import run_engine
@@ -210,6 +214,11 @@ def _run_engine_background(
             sand_path=file_map[FileType.well],
             production_path=file_map[FileType.production],
             lumping_path=file_map[FileType.lumping],
+            marker_sheet=sheet_map.get(FileType.marker),
+            completion_sheet=sheet_map.get(FileType.completion),
+            sand_sheet=sheet_map.get(FileType.well),
+            production_sheet=sheet_map.get(FileType.production),
+            lumping_sheet=sheet_map.get(FileType.lumping),
             output_path=output_path,
             log_fn=lambda msg: logs.append(msg),
         )
@@ -254,6 +263,7 @@ def execute_project(
         .all()
     )
     file_map = {f.file_type: f.storage_path for f in files}
+    sheet_map = {f.file_type: f.sheet_name for f in files if f.sheet_name}
     required = {FileType.marker, FileType.well, FileType.production, FileType.completion, FileType.lumping}
     missing = required - set(file_map.keys())
     if missing:
@@ -278,6 +288,7 @@ def execute_project(
         exec_id=execution.id,
         project_id=project_id,
         file_map=file_map,
+        sheet_map=sheet_map,
         output_path=output_path,
     )
     return execution

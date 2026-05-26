@@ -86,6 +86,7 @@ export interface DataFileResponse {
   project_id: string
   file_type: FileType
   original_filename: string
+  sheet_name: string | null
   storage_path: string
   uploaded_at: string
 }
@@ -120,11 +121,12 @@ export const projectsApi = {
   delete: (id: string) =>
     request<void>(`/projects/${id}`, { method: 'DELETE' }),
 
-  uploadFile: (projectId: string, fileType: FileType, file: File) => {
+  uploadFile: (projectId: string, fileType: FileType, file: File, sheetName?: string) => {
     const form = new FormData()
     form.append('file', file)
+    const qs = sheetName ? `?sheet_name=${encodeURIComponent(sheetName)}` : ''
     return request<DataFileResponse>(
-      `/projects/${projectId}/files/${fileType}`,
+      `/projects/${projectId}/files/${fileType}${qs}`,
       { method: 'POST', body: form }
     )
   },

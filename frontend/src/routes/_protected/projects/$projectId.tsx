@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
+import * as XLSX from 'xlsx'
 import { projectsApi, type FileType, type ExecutionHistoryResponse } from '#/lib/api'
 import { getToken } from '#/lib/api'
 import { Button } from '#/components/ui/button'
@@ -15,7 +16,7 @@ const FILE_SLOTS: { type: FileType; label: string; hint: string }[] = [
   { type: 'well',       label: 'Sand/Zone List',    hint: 'Column: Marker (ordered zone names)' },
   { type: 'production', label: 'Production Data',   hint: 'Columns: WELL, DATE, OIL, WATER, GAS, WINJ' },
   { type: 'completion', label: 'Completion Data',   hint: 'Columns: WELL, DATE, Perf Status, Perf Top, Perf Base' },
-  { type: 'lumping',    label: 'Lumping / kh Data', hint: 'Index: Zone log; columns = well names' },
+  { type: 'lumping',    label: 'Lumping / kh Data', hint: 'Columns: Well, Zone, Lumping (kh weight)' },
 ]
 
 const STATUS_COLOR: Record<string, string> = {
@@ -45,8 +46,8 @@ function ProjectDetailPage() {
   })
 
   const uploadMutation = useMutation({
-    mutationFn: ({ fileType, file }: { fileType: FileType; file: File }) =>
-      projectsApi.uploadFile(projectId, fileType, file),
+    mutationFn: ({ fileType, file, sheetName }: { fileType: FileType; file: File; sheetName?: string }) =>
+      projectsApi.uploadFile(projectId, fileType, file, sheetName),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['project', projectId] }),
   })
 
@@ -110,7 +111,7 @@ function ProjectDetailPage() {
               uploadMutation.isPending &&
               (uploadMutation.variables as any)?.fileType === slot.type
             }
-            onUpload={(file) => uploadMutation.mutate({ fileType: slot.type, file })}
+            onUpload={(file, sheetName) => uploadMutation.mutate({ fileType: slot.type, file, sheetName })}
           />
         ))}
       </div>
@@ -161,6 +162,14 @@ function ProjectDetailPage() {
   )
 }
 
+async function readSheetNames(file: File): Promise<string[]> {
+  const ext = file.name.split('.').pop()?.toLowerCase()
+  if (ext !== 'xlsx' && ext !== 'xls') return []
+  const buf = await file.arrayBuffer()
+  const wb = XLSX.read(buf, { bookSheets: true })
+  return wb.SheetNames
+}
+
 function FileUploadCard({
   slot,
   uploadedFile,
@@ -168,11 +177,42 @@ function FileUploadCard({
   onUpload,
 }: {
   slot: (typeof FILE_SLOTS)[0]
-  uploadedFile?: { original_filename: string; uploaded_at: string }
+  uploadedFile?: { original_filename: string; sheet_name: string | null; uploaded_at: string }
   isUploading: boolean
-  onUpload: (file: File) => void
+  onUpload: (file: File, sheetName?: string) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [sheets, setSheets] = useState<string[]>([])
+  const [isReading, setIsReading] = useState(false)
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+
+    setIsReading(true)
+    const names = await readSheetNames(f)
+    setIsReading(false)
+
+    if (names.length <= 1) {
+      onUpload(f, names[0])
+    } else {
+      setPendingFile(f)
+      setSheets(names)
+    }
+  }
+
+  const handleSheetPick = (sheetName: string) => {
+    if (pendingFile) onUpload(pendingFile, sheetName)
+    setPendingFile(null)
+    setSheets([])
+  }
+
+  const handleCancel = () => {
+    setPendingFile(null)
+    setSheets([])
+  }
 
   return (
     <Card className="island-shell border-[var(--line)] gap-2">
@@ -197,31 +237,59 @@ function FileUploadCard({
             </span>
           )}
         </div>
+
         {uploadedFile && (
-          <p className="text-xs text-[var(--sea-ink-soft)] truncate mt-1">
-            {uploadedFile.original_filename}
-          </p>
+          <div className="mt-1">
+            <p className="text-xs text-[var(--sea-ink-soft)] truncate">{uploadedFile.original_filename}</p>
+            {uploadedFile.sheet_name && (
+              <p className="text-xs text-[var(--lagoon)] mt-0.5">Sheet: {uploadedFile.sheet_name}</p>
+            )}
+          </div>
         )}
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".csv,.xlsx,.xls"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) onUpload(f)
-            e.target.value = ''
-          }}
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={isUploading}
-          onClick={() => inputRef.current?.click()}
-          className="w-full mt-2 text-xs h-8"
-        >
-          {isUploading ? 'Uploading…' : uploadedFile ? 'Replace File' : 'Upload File'}
-        </Button>
+
+        {sheets.length > 1 && pendingFile ? (
+          <div className="mt-2">
+            <p className="text-xs font-medium text-[var(--sea-ink)] mb-1.5">
+              Select sheet from <span className="font-semibold">{pendingFile.name}</span>:
+            </p>
+            <div className="flex flex-col gap-1">
+              {sheets.map((name) => (
+                <button
+                  key={name}
+                  onClick={() => handleSheetPick(name)}
+                  className="text-left text-xs px-3 py-1.5 rounded-lg border border-[var(--line)] hover:border-[var(--lagoon)] hover:bg-[var(--lagoon)]/5 transition-colors text-[var(--sea-ink)] truncate"
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={handleCancel}
+              className="mt-1.5 text-xs text-[var(--sea-ink-soft)] hover:text-[var(--sea-ink)] underline"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <>
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isUploading || isReading}
+              onClick={() => inputRef.current?.click()}
+              className="w-full mt-2 text-xs h-8"
+            >
+              {isUploading ? 'Uploading…' : isReading ? 'Reading…' : uploadedFile ? 'Replace File' : 'Upload File'}
+            </Button>
+          </>
+        )}
       </CardHeader>
     </Card>
   )

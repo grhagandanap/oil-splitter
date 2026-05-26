@@ -15,7 +15,7 @@ Input files (any mix of CSV / XLSX):
   - completion  : columns [WELL, DATE, Perf Status, Perf Top (ftMD), Perf Base (ftMD)]
   - sand        : column  [Marker]  — ordered list of zone names top → bottom
   - production  : columns [WELL, DATE, OIL, WATER, GAS, WINJ]
-  - lumping     : index="Zone log" (sand names), columns=well names, values=kh weights
+  - lumping     : columns [Well, Zone, Lumping] — pivoted internally to kh matrix
 """
 
 import copy
@@ -32,11 +32,94 @@ logger = logging.getLogger(__name__)
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
-def _read_file(path: str) -> pd.DataFrame:
+def _read_file(path: str, sheet_name: Optional[str] = None) -> pd.DataFrame:
     p = Path(path)
     if p.suffix.lower() in (".xlsx", ".xls"):
-        return pd.read_excel(path)
+        kwargs = {"sheet_name": sheet_name} if sheet_name else {}
+        return pd.read_excel(path, **kwargs)
     return pd.read_csv(path)
+
+
+# ── Column-name normalization ──────────────────────────────────────────────────
+
+_MARKER_COLS: Dict[str, List[str]] = {
+    "Well":    ["well", "uwi", "well name", "wellname"],
+    "Surface": ["surface", "formation", "sand name"],
+    "MD":      ["md", "depth", "measured depth", "top md", "tvd", "top_md"],
+}
+
+_COMPLETION_COLS: Dict[str, List[str]] = {
+    "WELL":             ["well", "uwi", "well name", "wellname"],
+    "DATE":             ["date", "event date", "event_date"],
+    "Perf Status":      ["perf status", "status", "event type", "type", "event"],
+    "Perf Top (ftMD)":  ["perf top (ftmd)", "perf top", "top", "top (ftmd)",
+                         "top md", "topmd", "top_md", "top ftmd"],
+    "Perf Base (ftMD)": ["perf base (ftmd)", "perf base", "base", "bottom",
+                         "base (ftmd)", "base md", "basemd", "base_md",
+                         "base ftmd", "btm", "btm md"],
+}
+
+_SAND_COLS: Dict[str, List[str]] = {
+    "Marker": ["marker", "sand", "zone", "formation", "zone name", "sand name"],
+}
+
+_PRODUCTION_COLS: Dict[str, List[str]] = {
+    "WELL":  ["well", "uwi", "well name", "wellname"],
+    "DATE":  ["date"],
+    "OIL":   ["oil", "oil rate", "qo", "oil production"],
+    "WATER": ["water", "water rate", "water production", "wtr", "qw"],
+    "GAS":   ["gas", "gas rate", "gas production", "qg"],
+    "WINJ":  ["winj", "water injection", "wi", "water inj", "water_inj", "qwi"],
+}
+
+_LUMPING_COLS: Dict[str, List[str]] = {
+    "Well":    ["well", "uwi", "well name", "wellname"],
+    "Zone":    ["zone", "marker", "sand", "formation", "zone log",
+                "zone_log", "sand name", "zonelog"],
+    "Lumping": ["lumping", "kh", "weight", "factor", "kh weight"],
+}
+
+
+def _normalize_columns(df: pd.DataFrame, mapping: Dict[str, List[str]]) -> pd.DataFrame:
+    """Rename df columns to canonical names via case-insensitive + strip matching."""
+    rename: Dict[str, str] = {}
+    already_taken: set = set()
+    for canonical, aliases in mapping.items():
+        alias_set = {a.strip().lower() for a in aliases}
+        for col in df.columns:
+            if col not in rename and col.strip().lower() in alias_set and canonical not in already_taken:
+                rename[col] = canonical
+                already_taken.add(canonical)
+                break
+    return df.rename(columns=rename)
+
+
+def _validate_required(df: pd.DataFrame, required: List[str], context: str) -> None:
+    """Raise ValueError if any required column is absent."""
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"[{context}] Missing required column(s): {missing}. "
+            f"Found: {list(df.columns)}"
+        )
+
+
+def _validate_completion_data(df: pd.DataFrame) -> None:
+    """Raise ValueError if any row has Perf Top >= Perf Base."""
+    top  = pd.to_numeric(df["Perf Top (ftMD)"],  errors="coerce")
+    base = pd.to_numeric(df["Perf Base (ftMD)"], errors="coerce")
+    bad  = (top >= base) & top.notna() & base.notna()
+    if bad.any():
+        n = int(bad.sum())
+        examples = (
+            df.loc[bad, ["WELL", "DATE", "Perf Top (ftMD)", "Perf Base (ftMD)"]]
+            .head(3)
+            .to_dict("records")
+        )
+        raise ValueError(
+            f"Completion: {n} row(s) have Perf Top >= Perf Base. "
+            f"First offender(s): {examples}"
+        )
 
 
 def load_inputs(
@@ -45,39 +128,83 @@ def load_inputs(
     sand_path: str,
     production_path: str,
     lumping_path: str,
+    marker_sheet: Optional[str] = None,
+    completion_sheet: Optional[str] = None,
+    sand_sheet: Optional[str] = None,
+    production_sheet: Optional[str] = None,
+    lumping_sheet: Optional[str] = None,
 ) -> Dict[str, pd.DataFrame]:
+    marker_df     = _normalize_columns(_read_file(marker_path,     marker_sheet),     _MARKER_COLS)
+    completion_df = _normalize_columns(_read_file(completion_path, completion_sheet), _COMPLETION_COLS)
+    sand_df       = _normalize_columns(_read_file(sand_path,        sand_sheet),       _SAND_COLS)
+    production_df = _normalize_columns(_read_file(production_path, production_sheet), _PRODUCTION_COLS)
+    lumping_raw   = _normalize_columns(_read_file(lumping_path,     lumping_sheet),    _LUMPING_COLS)
+
+    _validate_required(marker_df,     ["Well", "Surface", "MD"],                        "Marker")
+    _validate_required(completion_df, ["WELL", "DATE", "Perf Status",
+                                       "Perf Top (ftMD)", "Perf Base (ftMD)"],          "Completion")
+    _validate_required(sand_df,       ["Marker"],                                        "Sand/Zone")
+    _validate_required(production_df, ["WELL", "DATE"],                                  "Production")
+    _validate_required(lumping_raw,   ["Well", "Zone", "Lumping"],                       "Lumping")
+
+    _validate_completion_data(completion_df)
+
+    lumping_df = lumping_raw.pivot_table(
+        index="Zone", columns="Well", values="Lumping", aggfunc="first"
+    )
+    lumping_df.index.name = "Zone log"
+    lumping_df.columns.name = None
+
     return {
-        "marker":     _read_file(marker_path),
-        "completion": _read_file(completion_path),
-        "sand":       _read_file(sand_path),
-        "production": _read_file(production_path),
-        "lumping":    _read_file(lumping_path),
+        "marker":     marker_df,
+        "completion": completion_df,
+        "sand":       sand_df,
+        "production": production_df,
+        "lumping":    lumping_df,
     }
 
 
 # ── Phase 1: Auto-marker ───────────────────────────────────────────────────────
 
 def _classify_perf(
-    perf_depth: float, sand_list: List[str], row: pd.Series
+    perf_depth: float,
+    sand_list: List[str],
+    row: pd.Series,
+    tolerance: float = 0.0,
 ) -> Optional[str]:
-    """Return which sand zone a single depth value falls into."""
+    """Return which sand zone a single depth value falls into.
+
+    tolerance : if > 0, perf_depth that falls within *tolerance* feet above
+                the first available marker depth is assigned to that zone.
+                Only the topmost (first) available marker is eligible.
+    """
     if pd.isna(perf_depth):
         return None
+    perf_depth = float(perf_depth)
     for i, sand in enumerate(sand_list):
         sand_top = row.get(sand)
         if sand_top is None or pd.isna(sand_top):
             continue
+        sand_top_f = float(sand_top)
         if i + 1 < len(sand_list):
             sand_next = row.get(sand_list[i + 1])
             if sand_next is not None and not pd.isna(sand_next):
-                if float(sand_top) <= float(perf_depth) < float(sand_next):
+                if sand_top_f <= perf_depth < float(sand_next):
                     return sand
             else:
-                if float(perf_depth) >= float(sand_top):
+                if perf_depth >= sand_top_f:
                     return sand
         else:
-            if float(perf_depth) >= float(sand_top):
+            if perf_depth >= sand_top_f:
                 return sand
+    if tolerance > 0:
+        for sand in sand_list:
+            sand_top = row.get(sand)
+            if sand_top is not None and not pd.isna(sand_top):
+                first_top = float(sand_top)
+                if first_top - tolerance <= perf_depth < first_top:
+                    return sand
+                break
     return None
 
 
@@ -131,7 +258,7 @@ def run_automarker(
             continue
 
         for idx, row in temp.iterrows():
-            top_val    = _classify_perf(row["Perf Top (ftMD)"],  well_sands, row)
+            top_val    = _classify_perf(row["Perf Top (ftMD)"],  well_sands, row, tolerance=1.5)
             bottom_val = _classify_perf(row["Perf Base (ftMD)"], well_sands, row)
             marker     = _get_marker(top_val, bottom_val, well_sands)
 
@@ -359,9 +486,6 @@ def run_splitting(
     lumping_df        : index="Zone log" (sand names), columns=well names, values=kh
     fluid_cols        : which columns to split (default auto-detect OIL/WATER/GAS/WINJ)
     """
-    if "Zone log" in lumping_df.columns:
-        lumping_df = lumping_df.set_index("Zone log")
-
     if fluid_cols is None:
         fluid_cols = [c for c in ["OIL", "WATER", "GAS", "WINJ"] if c in marked_production.columns]
 
@@ -427,6 +551,11 @@ def run_engine(
     production_path: str,
     lumping_path: str,
     output_path: str,
+    marker_sheet: Optional[str] = None,
+    completion_sheet: Optional[str] = None,
+    sand_sheet: Optional[str] = None,
+    production_sheet: Optional[str] = None,
+    lumping_sheet: Optional[str] = None,
     log_fn: Optional[Callable] = None,
 ) -> Dict[str, pd.DataFrame]:
     """
@@ -442,14 +571,19 @@ def run_engine(
 
     _log("Loading input files...")
     inputs = load_inputs(
-        marker_path, completion_path, sand_path, production_path, lumping_path
+        marker_path, completion_path, sand_path, production_path, lumping_path,
+        marker_sheet=marker_sheet,
+        completion_sheet=completion_sheet,
+        sand_sheet=sand_sheet,
+        production_sheet=production_sheet,
+        lumping_sheet=lumping_sheet,
     )
 
     marker_df     = inputs["marker"]
     completion_df = inputs["completion"]
     sand_list     = inputs["sand"]["Marker"].dropna().tolist()
     production_df = inputs["production"]
-    lumping_df    = inputs["lumping"]
+    lumping_df    = inputs["lumping"]  # already pivoted: index=zone, cols=wells
 
     _log(f"  Wells in production : {production_df['WELL'].nunique()}")
     _log(f"  Sand zones          : {len(sand_list)}")
