@@ -14,7 +14,7 @@ export const Route = createFileRoute('/_protected/projects/$projectId')({
 const FILE_SLOTS: { type: FileType; label: string; hint: string }[] = [
   { type: 'marker',     label: 'Marker Data',      hint: 'Columns: Well, Surface, MD' },
   { type: 'well',       label: 'Sand/Zone List',    hint: 'Column: Marker (ordered zone names)' },
-  { type: 'production', label: 'Production Data',   hint: 'Columns: WELL, DATE, OIL, WATER, GAS, WINJ' },
+  { type: 'production', label: 'Production Data',   hint: 'Columns: WELL, DATE + any of: OIL, WATER, GAS, WINJ' },
   { type: 'completion', label: 'Completion Data',   hint: 'Columns: WELL, DATE, Perf Status, Perf Top, Perf Base' },
   { type: 'lumping',    label: 'Lumping / kh Data', hint: 'Columns: Well, Zone, Lumping (kh weight)' },
 ]

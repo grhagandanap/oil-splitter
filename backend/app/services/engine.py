@@ -65,11 +65,17 @@ _SAND_COLS: Dict[str, List[str]] = {
 
 _PRODUCTION_COLS: Dict[str, List[str]] = {
     "WELL":  ["well", "uwi", "well name", "wellname"],
-    "DATE":  ["date"],
-    "OIL":   ["oil", "oil rate", "qo", "oil production"],
-    "WATER": ["water", "water rate", "water production", "wtr", "qw"],
-    "GAS":   ["gas", "gas rate", "gas production", "qg"],
-    "WINJ":  ["winj", "water injection", "wi", "water inj", "water_inj", "qwi"],
+    "DATE":  ["date", "month", "period"],
+    "OIL":   ["oil", "oil rate", "qo", "oil production", "bopd", "oil (bbl)",
+              "oil (bopd)", "oil vol", "oil volume", "gross oil"],
+    "WATER": ["water", "water rate", "water production", "wtr", "qw", "bwpd",
+              "water (bbl)", "water (bwpd)", "water vol", "water volume",
+              "produced water", "water prod"],
+    "GAS":   ["gas", "gas rate", "gas production", "qg", "mmscfd", "mcfd",
+              "gas (mcf)", "gas (mmscfd)", "gas vol", "gas volume"],
+    "WINJ":  ["winj", "water injection", "wi", "water inj", "water_inj", "qwi",
+              "inj", "injection", "water inject", "winj (bbl)", "w inj",
+              "water injected"],
 }
 
 _LUMPING_COLS: Dict[str, List[str]] = {
@@ -585,7 +591,9 @@ def run_engine(
     production_df = inputs["production"]
     lumping_df    = inputs["lumping"]  # already pivoted: index=zone, cols=wells
 
+    fluid_present = [c for c in ["OIL", "WATER", "GAS", "WINJ"] if c in production_df.columns]
     _log(f"  Wells in production : {production_df['WELL'].nunique()}")
+    _log(f"  Fluid columns       : {fluid_present if fluid_present else '(none — check column names)'}")
     _log(f"  Sand zones          : {len(sand_list)}")
     _log(f"  Completion events   : {len(completion_df)}")
 
