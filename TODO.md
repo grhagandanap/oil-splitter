@@ -19,11 +19,11 @@
 - [x] Build the main Dashboard UI (Projects List view)
 
 ## Phase 4: Core Logic & Upload API
-- [ ] Setup local storage (or AWS S3) integration for file uploads
-- [ ] Create API endpoints for Project creation and retrieving project history
-- [ ] Create API endpoints for handling the 5 required dataset uploads
-- [ ] Port Jupyter Notebook logic (`Markering and Splitting (GG v1).ipynb`) to Python module (`services/engine.py`)
-- [ ] Handle Pandas edge cases and optimize processing for the execution engine
+- [x] Setup local storage (or AWS S3) integration for file uploads
+- [x] Create API endpoints for Project creation and retrieving project history
+- [x] Create API endpoints for handling the 5 required dataset uploads
+- [x] Port Jupyter Notebook logic (`Markering and Splitting (GG v1).ipynb`) to Python module (`services/engine.py`)
+- [x] Handle Pandas edge cases and optimize processing for the execution engine
 
 ## Phase 5: Execution UI & Results
 - [ ] Build the multi-step upload wizard component in React (for Marker, Well, Production, Completion, Lumping)

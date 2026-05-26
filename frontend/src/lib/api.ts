@@ -16,7 +16,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   }
 
-  if (!(options.body instanceof URLSearchParams)) {
+  if (
+    !(options.body instanceof URLSearchParams) &&
+    !(options.body instanceof FormData)
+  ) {
     headers['Content-Type'] = 'application/json'
   }
 
@@ -63,4 +66,71 @@ export const authApi = {
   },
 
   me: () => api.get<UserResponse>('/auth/me'),
+}
+
+// ── Project types & API ──────────────────────────────────────────────────────
+
+export type ProjectStatus = 'pending' | 'processing' | 'completed' | 'failed'
+export type FileType = 'marker' | 'well' | 'production' | 'completion' | 'lumping'
+
+export interface ProjectResponse {
+  id: string
+  name: string
+  description: string | null
+  status: ProjectStatus
+  created_at: string
+}
+
+export interface DataFileResponse {
+  id: string
+  project_id: string
+  file_type: FileType
+  original_filename: string
+  storage_path: string
+  uploaded_at: string
+}
+
+export interface ProjectWithFiles extends ProjectResponse {
+  files: DataFileResponse[]
+}
+
+export interface ExecutionHistoryResponse {
+  id: string
+  project_id: string
+  result_file_url: string | null
+  logs: string | null
+  executed_at: string
+}
+
+export const projectsApi = {
+  list: () => api.get<ProjectResponse[]>('/projects/'),
+
+  create: (name: string, description?: string) =>
+    api.post<ProjectResponse>('/projects/', { name, description }),
+
+  get: (id: string) => api.get<ProjectWithFiles>(`/projects/${id}`),
+
+  update: (id: string, data: { name?: string; description?: string }) =>
+    request<ProjectResponse>(`/projects/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: string) =>
+    request<void>(`/projects/${id}`, { method: 'DELETE' }),
+
+  uploadFile: (projectId: string, fileType: FileType, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<DataFileResponse>(
+      `/projects/${projectId}/files/${fileType}`,
+      { method: 'POST', body: form }
+    )
+  },
+
+  listFiles: (projectId: string) =>
+    api.get<DataFileResponse[]>(`/projects/${projectId}/files`),
+
+  getHistory: (projectId: string) =>
+    api.get<ExecutionHistoryResponse[]>(`/projects/${projectId}/history`),
 }
