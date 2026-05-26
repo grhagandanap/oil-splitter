@@ -26,10 +26,10 @@
 - [x] Handle Pandas edge cases and optimize processing for the execution engine
 
 ## Phase 5: Execution UI & Results
-- [ ] Build the multi-step upload wizard component in React (for Marker, Well, Production, Completion, Lumping)
-- [ ] Add an "Execute" feature triggering backend background processing
-- [ ] Build a live loading/polling state (via TanStack Query) to monitor processing status
-- [ ] Implement final report generation and enable user downloads (Excel/CSV)
+- [x] Build the multi-step upload wizard component in React (for Marker, Well, Production, Completion, Lumping)
+- [x] Add an "Execute" feature triggering backend background processing
+- [x] Build a live loading/polling state (via TanStack Query) to monitor processing status
+- [x] Implement final report generation and enable user downloads (Excel/CSV)
 
 ## Phase 6: Deployment
 - [ ] Provision and configure Neon Serverless PostgreSQL database

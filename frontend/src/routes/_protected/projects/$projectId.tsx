@@ -34,6 +34,9 @@ function ProjectDetailPage() {
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => projectsApi.get(projectId),
+    refetchInterval: (query) =>
+      (query.state.data as typeof project)?.status === 'processing' ? 2000 : false,
+    refetchIntervalInBackground: false,
   })
 
   const isProcessing = project?.status === 'processing'
@@ -41,7 +44,10 @@ function ProjectDetailPage() {
   const { data: history = [] } = useQuery({
     queryKey: ['history', projectId],
     queryFn: () => projectsApi.getHistory(projectId),
-    refetchInterval: isProcessing ? 2000 : false,
+    refetchInterval: (query) => {
+      const items = query.state.data as ExecutionHistoryResponse[] | undefined
+      return items?.some((h) => h.status === 'processing') ? 2000 : false
+    },
     refetchIntervalInBackground: false,
   })
 
@@ -100,6 +106,18 @@ function ProjectDetailPage() {
           ({uploadedTypes.size} / {FILE_SLOTS.length} uploaded)
         </span>
       </h3>
+
+      {isProcessing && (
+        <div className="mb-6 flex items-center gap-3 border border-blue-200 bg-blue-50 rounded-2xl px-5 py-4">
+          <SpinnerIcon className="size-5 shrink-0 animate-spin text-blue-500" />
+          <div>
+            <p className="text-sm font-semibold text-blue-800">Engine is running…</p>
+            <p className="text-xs text-blue-600 mt-0.5">
+              The marker → squeeze → split pipeline is processing. Results will appear below when done.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {FILE_SLOTS.map((slot) => (
@@ -303,19 +321,52 @@ function HistoryRow({
   projectId: string
 }) {
   const [showLogs, setShowLogs] = useState(false)
-  const token = getToken()
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
 
-  const downloadUrl = projectsApi.downloadResult(projectId, execution.id)
+  const handleDownload = async () => {
+    setIsDownloading(true)
+    setDownloadError(null)
+    try {
+      const token = getToken()
+      const url = projectsApi.downloadResult(projectId, execution.id)
+      const res = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (!res.ok) throw new Error(`Download failed (${res.status})`)
+      const blob = await res.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objectUrl
+      const ts = new Date(execution.executed_at).toISOString().slice(0, 16).replace('T', '_')
+      a.download = `oil_splitter_result_${ts}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(objectUrl)
+    } catch (err) {
+      setDownloadError((err as Error).message)
+    } finally {
+      setIsDownloading(false)
+    }
+  }
 
   return (
     <div className="island-shell border border-[var(--line)] rounded-xl p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span
-            className={`text-xs font-medium px-2.5 py-0.5 rounded-full ${STATUS_COLOR[execution.status] ?? 'bg-gray-100 text-gray-700'}`}
-          >
-            {execution.status}
-          </span>
+          {execution.status === 'processing' ? (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800">
+              <SpinnerIcon className="size-3 animate-spin" />
+              processing
+            </span>
+          ) : (
+            <span
+              className={`text-xs font-medium px-2.5 py-0.5 rounded-full ${STATUS_COLOR[execution.status] ?? 'bg-gray-100 text-gray-700'}`}
+            >
+              {execution.status}
+            </span>
+          )}
           <span className="text-xs text-[var(--sea-ink-soft)]">
             {new Date(execution.executed_at).toLocaleString()}
           </span>
@@ -330,16 +381,23 @@ function HistoryRow({
             </button>
           )}
           {execution.status === 'completed' && (
-            <a
-              href={`${downloadUrl}?token=${token}`}
-              download
-              className="text-xs px-3 py-1 rounded-lg bg-[var(--lagoon)] text-white hover:opacity-80 transition-opacity"
+            <button
+              onClick={handleDownload}
+              disabled={isDownloading}
+              className="inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-lg bg-[var(--lagoon)] text-white hover:opacity-80 transition-opacity disabled:opacity-50"
             >
-              Download
-            </a>
+              {isDownloading ? (
+                <><SpinnerIcon className="size-3 animate-spin" /> Downloading…</>
+              ) : (
+                <>&#8595; Download xlsx</>
+              )}
+            </button>
           )}
         </div>
       </div>
+      {downloadError && (
+        <p className="mt-2 text-xs text-red-600">{downloadError}</p>
+      )}
       {showLogs && execution.logs && (
         <pre className="mt-3 text-xs bg-[var(--sand)] rounded-lg p-3 overflow-x-auto text-[var(--sea-ink)] whitespace-pre-wrap max-h-48 overflow-y-auto">
           {execution.logs}
