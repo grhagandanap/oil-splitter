@@ -1,10 +1,23 @@
 import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { AuthProvider } from '#/contexts/auth'
 
 import appCss from '../styles.css?url'
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 1000 * 60 * 5, retry: 1 },
+  },
+})
+
 export const Route = createRootRoute({
+  notFoundComponent: () => (
+    <div className="min-h-screen flex items-center justify-center">
+      <p className="text-sm text-[var(--sea-ink-soft)]">Page not found</p>
+    </div>
+  ),
   head: () => ({
     meta: [
       {
@@ -15,7 +28,7 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'TanStack Start Starter',
+        title: 'Oil Splitter',
       },
     ],
     links: [
@@ -35,7 +48,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        {children}
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </QueryClientProvider>
         <TanStackDevtools
           config={{
             position: 'bottom-right',
