@@ -13,10 +13,10 @@
 - [x] Setup JWT issuance and validation middleware for protected routes
 
 ## Phase 3: Frontend Scaffolding & Auth UI
-- [ ] Implement application layout and TanStack routing
-- [ ] Build Shadcn UI forms for Login and Registration
-- [ ] Integrate frontend auth state with backend JWT
-- [ ] Build the main Dashboard UI (Projects List view)
+- [x] Implement application layout and TanStack routing
+- [x] Build Shadcn UI forms for Login and Registration
+- [x] Integrate frontend auth state with backend JWT
+- [x] Build the main Dashboard UI (Projects List view)
 
 ## Phase 4: Core Logic & Upload API
 - [ ] Setup local storage (or AWS S3) integration for file uploads
